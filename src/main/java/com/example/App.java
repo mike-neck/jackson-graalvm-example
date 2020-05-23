@@ -3,12 +3,64 @@
  */
 package com.example;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Scanner;
+
 public class App {
-    public String getGreeting() {
-        return "Hello world.";
+
+    private final boolean pretty;
+
+    public App(boolean pretty) {
+        this.pretty = pretty;
     }
 
     public static void main(String[] args) {
-        System.out.println(new App().getGreeting());
+        try {
+            App app = newApp(args);
+            JsonNode jsonNode = app.readYaml(System.in);
+            String json = app.toJson(jsonNode);
+            System.out.println(json);
+            System.exit(0);
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+            System.exit(1);
+        }
+    }
+
+    private static App newApp(String... params) {
+        boolean pretty = List.of(params).contains("-p");
+        return new App(pretty);
+    }
+
+    private JsonNode readYaml(InputStream inputStream) throws IOException {
+        Scanner scanner = new Scanner(inputStream, StandardCharsets.UTF_8);
+        StringBuilder sb = new StringBuilder();
+        while (scanner.hasNextLine()) {
+            sb.append(scanner.nextLine()).append('\n');
+        }
+        ObjectMapper objectMapper = new ObjectMapper(new YAMLFactory());
+        return objectMapper.readTree(sb.toString());
+    }
+
+    private String toJson(JsonNode jsonNode) throws IOException {
+        ObjectWriter objectWriter = jsonObjectMapper();
+        return objectWriter.writeValueAsString(jsonNode);
+    }
+
+    private ObjectWriter jsonObjectMapper() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        if (!pretty) {
+            return objectMapper.writer();
+        }
+        return objectMapper.writerWithDefaultPrettyPrinter();
     }
 }
