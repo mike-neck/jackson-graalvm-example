@@ -3,7 +3,6 @@
  */
 package com.example;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
@@ -11,21 +10,17 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.invoke.MethodHandles;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Scanner;
+import java.util.stream.Collectors;
 
-public class App {
+public interface App {
 
-    private final boolean pretty;
-
-    public App(boolean pretty) {
-        this.pretty = pretty;
-    }
-
-    public static void main(String[] args) {
+    static void main(String[] args) {
         try {
-            App app = newApp(args);
+            App app = newAppFactory(args).createApp();
             JsonNode jsonNode = app.readYaml(System.in);
             String json = app.toJson(jsonNode);
             System.out.println(json);
@@ -36,31 +31,23 @@ public class App {
         }
     }
 
-    private static App newApp(String... params) {
-        boolean pretty = List.of(params).contains("-p");
-        return new App(pretty);
+    private static AppFactory newAppFactory(String... params) {
+        List<String> arguments = Arrays.stream(params)
+                .map(String::toLowerCase).collect(Collectors.toUnmodifiableList());
+        boolean pretty = arguments.contains("-p");
+        boolean useProxy = arguments.contains("-x");
+        return AppFactory.getInstance(pretty, useProxy, MethodHandles.lookup());
     }
 
-    private JsonNode readYaml(InputStream inputStream) throws IOException {
-        Scanner scanner = new Scanner(inputStream, StandardCharsets.UTF_8);
-        StringBuilder sb = new StringBuilder();
-        while (scanner.hasNextLine()) {
-            sb.append(scanner.nextLine()).append('\n');
-        }
+    default JsonNode readYaml(InputStream inputStream) throws IOException {
         ObjectMapper objectMapper = new ObjectMapper(new YAMLFactory());
-        return objectMapper.readTree(sb.toString());
+        return objectMapper.readTree(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
     }
 
-    private String toJson(JsonNode jsonNode) throws IOException {
-        ObjectWriter objectWriter = jsonObjectMapper();
+    default String toJson(JsonNode jsonNode) throws IOException {
+        ObjectWriter objectWriter = objectWriter();
         return objectWriter.writeValueAsString(jsonNode);
     }
 
-    private ObjectWriter jsonObjectMapper() {
-        ObjectMapper objectMapper = new ObjectMapper();
-        if (!pretty) {
-            return objectMapper.writer();
-        }
-        return objectMapper.writerWithDefaultPrettyPrinter();
-    }
+    ObjectWriter objectWriter();
 }

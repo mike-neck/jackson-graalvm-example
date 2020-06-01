@@ -1,3 +1,5 @@
+import java.nio.charset.StandardCharsets
+
 plugins {
     id 'java'
     id 'application'
@@ -38,5 +40,97 @@ nativeImage {
             '--no-fallback',
             '--enable-all-security-services',
             '--report-unsupported-elements-at-runtime'
+    )
+}
+
+task showRuntimeClassPath {
+    doLast {
+        sourceSets.main.runtimeClasspath.each {
+            println it.toPath()
+        }
+    }
+}
+
+task createNativeConfigDir(group: 'graalvm') {
+    File targetDir = file("$buildDir/native-config")
+    outputs.dir(targetDir)
+    outputs.upToDateWhen { targetDir.exists() }
+    doLast {
+        if (!targetDir.exists()) {
+            targetDir.mkdirs()
+        }
+    }
+}
+
+task generateConfig(group: 'graalvm', dependsOn: ['createNativeConfigDir', 'classes']) {
+    def executions = [
+            [stdIn: """
+                |Contents:
+                |  - Name: foo
+                |    Size: 2048
+                |  - Name: bar/baz.qux
+                |    Size: 1024
+                |""".stripMargin(),
+            args: []],
+            [stdIn: """
+                |Contents:
+                |  - Name: foo
+                |    Size: 2048
+                |  - Name: bar/baz.qux
+                |    Size: 1024
+                |""".stripMargin(),
+             args: ['-p']],
+            [stdIn: """
+                |Contents:
+                |  - Name: foo
+                |    Size: 2048
+                |  - Name: bar/baz.qux
+                |    Size: 1024
+                |""".stripMargin(),
+             args: ['-x']],
+    ]
+
+    File destinationDirParent = file("$buildDir/native-config")
+    outputs.dir(destinationDirParent)
+    inputs.files(sourceSets.main.allSource)
+    doLast {
+        executions.eachWithIndex { execution, index ->
+            def destinationDir = destinationDirParent.toPath().resolve("config-${index}").toFile()
+            if (!destinationDir.exists()) destinationDir.mkdirs()
+            javaexec {
+                ignoreExitValue = true
+                classpath(
+                        sourceSets.main.output.classesDirs,
+                        sourceSets.main.output.resourcesDir,
+                        configurations.runtimeClasspath.asFileTree,
+                )
+                main(appMain)
+                jvmArgs("-agentlib:native-image-agent=config-output-dir=${destinationDir}")
+                if (!execution.args.isEmpty()) {
+                    args(execution.args)
+                }
+                standardInput(new ByteArrayInputStream(execution.stdIn.getBytes('UTF-8')))
+            }
+        }
+    }
+}
+
+task executeWithAgent(type: JavaExec, group: "graalvm", dependsOn: ['createNativeConfigDir', 'compileJava']) {
+    classpath(
+            sourceSets.main.output.classesDirs,
+            configurations.runtimeClasspath.asFileTree,
+    )
+    main = appMain
+    jvmArgs("-agentlib:native-image-agent=config-output-dir=$buildDir/native-config")
+    args('-p')
+    standardInput(
+            //language=yaml
+            new ByteArrayInputStream("""
+Contents:
+  - Name: foo
+    Size: 2048
+  - Name: bar/baz.qux
+    Size: 1024
+""".getBytes(StandardCharsets.UTF_8))
     )
 }
